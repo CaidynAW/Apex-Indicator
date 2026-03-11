@@ -1,0 +1,1113 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// APEX INDICATOR — Adaptive SMC Intelligence Suite
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// © 2026 Caidyn Alexander Wheeler — All Rights Reserved
+//
+// This source code is the intellectual property of Caidyn Alexander Wheeler.
+// Unauthorized copying, redistribution, resale, or modification of this script
+// is strictly prohibited without express written permission from the owner.
+//
+// This indicator was independently developed and is protected under copyright law.
+// Violators may be subject to legal action under applicable copyright statutes.
+//
+// For licensing, access requests, or business inquiries:
+// 📧 caidynwheeler806@icloud.com
+//
+// ═══════════════════════════════════════════════════════════════════════════════
+
+//@version=6
+indicator("APEX INDICATOR", overlay=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TIMEFRAME CONTEXT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+tfMult    = timeframe.multiplier
+tfIntra   = timeframe.isintraday
+tfDaily   = timeframe.isdaily
+tfWeekly  = timeframe.isweekly
+tfMonthly = timeframe.ismonthly
+
+tfTier =
+     tfMonthly     ? 5 :
+     tfWeekly      ? 5 :
+     tfDaily       ? 4 :
+     not tfIntra   ? 3 :
+     tfMult >= 120 ? 3 :
+     tfMult >= 15  ? 2 : 1
+
+adaptVolBase(base) =>
+     tfTier == 5 ? math.min(base, 10) :
+     tfTier == 4 ? math.min(base, 15) : base
+
+adaptBosExtend() =>
+     tfMonthly ? 4 : tfWeekly ? 6 : tfDaily ? 10 :
+     tfIntra   ? math.max(10, math.min(80, math.round(300 / tfMult))) : 15
+
+adaptZonePad() =>
+     tfTier >= 4 ? 0.02 : tfTier == 3 ? 0.03 : 0.05
+
+adaptDashLookback() =>
+     tfTier == 5 ? 5 : tfTier == 4 ? 8 : 20
+
+adaptMaxFVGs(base) =>
+     tfTier == 1 ? math.min(base, 20) : base
+
+adaptOutcomeWindow() =>
+     tfTier == 1 ? 10 : tfTier == 2 ? 20 : tfTier == 3 ? 15 : tfTier == 4 ? 10 : 8
+
+adaptSuccessAtr() =>
+     tfTier == 1 ? 1.5 : tfTier == 2 ? 2.0 : tfTier == 3 ? 2.0 : tfTier == 4 ? 1.5 : 1.0
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HTF BIAS — GLOBAL
+// ═══════════════════════════════════════════════════════════════════════════════
+
+htfOption     = input.string("4H", "Bias Timeframe", options=["15m", "30m", "1H", "2H", "4H", "1D"], group="HTF Bias")
+htfResolution = htfOption == "4H" ? "240" : htfOption == "2H" ? "120" : htfOption == "1H" ? "60" : htfOption == "30m" ? "30" : htfOption == "15m" ? "15" : "D"
+
+htfEMA200     = request.security(syminfo.tickerid, htfResolution, ta.ema(close, 200), lookahead=barmerge.lookahead_off)
+htfEMA200Prev = request.security(syminfo.tickerid, htfResolution, ta.ema(close, 200)[1], lookahead=barmerge.lookahead_off)
+
+htfBullBias    = close > htfEMA200
+htfBearBias    = close < htfEMA200
+htfBullSlope   = htfEMA200 > htfEMA200Prev
+htfBearSlope   = htfEMA200 < htfEMA200Prev
+htfBullConfirm = htfBullBias and htfBullSlope
+htfBearConfirm = htfBearBias and htfBearSlope
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 1 — EMAs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+showAllEMAs = input.bool(true,    "Show All EMAs",            group="EMAs")
+emaSource   = input.source(close, "EMA Source",               group="EMAs")
+headLen     = input.int(15,       "Snake Head Length (bars)", minval=10, maxval=50, group="EMAs")
+headUpColor = input.color(color.new(#00FF88, 0), "Head Up Color",   group="EMAs")
+headDnColor = input.color(color.new(#FF3355, 0), "Head Down Color", group="EMAs")
+bodyColor   = input.color(color.new(#4A148C, 0), "Body Color",      group="EMAs")
+
+showEMA25  = input.bool(true, "Show EMA 25",  group="EMAs")
+showEMA50  = input.bool(true, "Show EMA 50",  group="EMAs")
+showEMA100 = input.bool(true, "Show EMA 100", group="EMAs")
+showEMA200 = input.bool(true, "Show EMA 200", group="EMAs")
+
+showRibbon      = input.bool(false, "Show EMA Ribbon Fill", group="EMAs")
+ribbonBullColor = input.color(color.new(#00FF88, 88), "Ribbon Bull Fill", group="EMAs")
+ribbonBearColor = input.color(color.new(#FF3355, 88), "Ribbon Bear Fill", group="EMAs")
+
+ema25  = ta.ema(emaSource, 25)
+ema50  = ta.ema(emaSource, 50)
+ema100 = ta.ema(emaSource, 100)
+ema200 = ta.ema(emaSource, 200)
+
+snakeColor(emaVal, emaValPrev) =>
+    isHead = bar_index >= last_bar_index - headLen
+    isUp   = emaVal > emaValPrev
+    isHead ? (isUp ? headUpColor : headDnColor) : bodyColor
+
+ema25Color  = snakeColor(ema25,  ema25[1])
+ema50Color  = snakeColor(ema50,  ema50[1])
+ema100Color = snakeColor(ema100, ema100[1])
+ema200Color = snakeColor(ema200, ema200[1])
+
+plot(ema25,  "EMA 25",  color=showAllEMAs and showEMA25  ? ema25Color  : na, linewidth=1)
+plot(ema50,  "EMA 50",  color=showAllEMAs and showEMA50  ? ema50Color  : na, linewidth=2)
+plot(ema100, "EMA 100", color=showAllEMAs and showEMA100 ? ema100Color : na, linewidth=3)
+plot(ema200, "EMA 200", color=showAllEMAs and showEMA200 ? ema200Color : na, linewidth=4)
+
+p25  = plot(ema25,  "Ribbon Base 25",  color=na, display=display.none)
+p200 = plot(ema200, "Ribbon Base 200", color=na, display=display.none)
+fill(p25, p200, color=showRibbon and showAllEMAs ? (ema25 > ema200 ? ribbonBullColor : ribbonBearColor) : color.new(color.black, 100), title="EMA Ribbon Fill")
+
+emaCrossBull = ta.crossover(ema25,  ema200)
+emaCrossBear = ta.crossunder(ema25, ema200)
+
+alertcondition(emaCrossBull, "🟢 EMA25 Crossed Above EMA200", "🟢 EMA25 crossed above EMA200 — Bullish cross")
+alertcondition(emaCrossBear, "🔴 EMA25 Crossed Below EMA200", "🔴 EMA25 crossed below EMA200 — Bearish cross")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 2 — CANDLE COLOR
+// ═══════════════════════════════════════════════════════════════════════════════
+
+_notice             = input.bool(false, "⚠️ Hide native candles — Chart Settings → Symbol → uncheck Body/Wicks", group="Candles")
+showCandles         = input.bool(true,  "Show Colored Candles",                                                   group="Candles")
+tolerance           = input.float(0.002, "Touch Tolerance", step=0.0001, group="Candles")
+showOriginalZone    = input.bool(false, "Show Original Colors In Zones", group="Candles")
+showOriginalCandles = input.bool(false, "Show Original Candle Colors",   group="Candles")
+
+colorAbove     = input.color(color.new(#00FF88, 0), "Candle Color Above EMA200", group="Candles")
+colorBelow     = input.color(color.new(#FF3355, 0), "Candle Color Below EMA200", group="Candles")
+colorTouchBull = input.color(color.new(#4A148C, 0), "Touch Color — Bull Bias",   group="Candles")
+colorTouchBear = input.color(color.new(#4A148C, 0), "Touch Color — Bear Bias",   group="Candles")
+colorTouchNeut = input.color(color.new(#4A148C, 0), "Touch Color — Neutral",     group="Candles")
+
+touched    = (low <= ema200 and high >= ema200) or math.abs(close - ema200) <= close * tolerance
+bullCandle = close >= open
+
+naturalBull = color.new(#26a69a, 0)
+naturalBear = color.new(#ef5350, 0)
+touchColor  = htfBullConfirm ? colorTouchBull : htfBearConfirm ? colorTouchBear : colorTouchNeut
+
+var color cColor = na
+if showOriginalCandles
+    cColor := bullCandle ? naturalBull : naturalBear
+else if touched and showOriginalZone
+    cColor := bullCandle ? colorAbove : colorBelow
+else if touched
+    cColor := touchColor
+else if close > ema200
+    cColor := colorAbove
+else
+    cColor := colorBelow
+
+plotcandle(open, high, low, close, title="Candles", color=showCandles ? cColor : na, wickcolor=showCandles ? cColor : na, bordercolor=showCandles ? cColor : na, force_overlay=true)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 3 — EMA TOUCH ZONES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+clusterGap      = input.int(3,     "Max Bars Between Touches", minval=1,  maxval=20, group="Zones")
+lookback        = input.int(10,    "Approach Lookback Bars",   minval=3,  maxval=50, group="Zones")
+zoneBorderWidth = input.int(2,     "Zone Border Width",        minval=1,  maxval=5,  group="Zones")
+showZones       = input.bool(true, "Show EMA Touch Zones",                           group="Zones")
+maxZones        = input.int(20,    "Max Zones On Chart",       minval=5,  maxval=50, group="Zones")
+showTouchCount  = input.bool(true, "Show Touch Count Label",                         group="Zones")
+zoneAtrLen      = input.int(14,    "ATR Length (Padding)",     minval=1,  maxval=50, group="Zones")
+
+zoneBullBorderColor = input.color(color.new(color.green, 0),  "Bull Zone Border", group="Zones")
+zoneBullFillColor   = input.color(color.new(color.green, 88), "Bull Zone Fill",   group="Zones")
+zoneBearBorderColor = input.color(color.new(color.red, 0),    "Bear Zone Border", group="Zones")
+zoneBearFillColor   = input.color(color.new(color.red, 88),   "Bear Zone Fill",   group="Zones")
+
+zoneAtr    = ta.atr(zoneAtrLen)
+zonePadMul = adaptZonePad()
+
+swingLookback     = math.max(1, math.min(lookback, bar_index))
+highestInLookback = ta.highest(high, swingLookback)
+lowestInLookback  = ta.lowest(low,   swingLookback)
+approachFromBelow = lowestInLookback < ema200 and (highestInLookback - lowestInLookback) > zoneAtr
+boxColor          = approachFromBelow ? zoneBearBorderColor : zoneBullBorderColor
+boxFill           = approachFromBelow ? zoneBearFillColor   : zoneBullFillColor
+
+var box   activeBox    = na
+var int   lastTouchBar = na
+var float boxTop       = na
+var float boxBottom    = na
+var int   touchCount   = 0
+var label touchLabel   = na
+
+var array<box>   zoneBoxes  = array.new_box(0)
+var array<label> zoneLabels = array.new_label(0)
+
+if showZones and touched
+    padding = zoneAtr * zonePadMul
+    if na(activeBox) or (bar_index - lastTouchBar) > clusterGap
+        if array.size(zoneBoxes) >= maxZones
+            box.delete(array.shift(zoneBoxes))
+            label.delete(array.shift(zoneLabels))
+        boxTop     := math.max(high, ema200) + padding
+        boxBottom  := math.min(low,  ema200) - padding
+        touchCount := 1
+        activeBox  := box.new(bar_index - 1, boxTop, bar_index + 1, boxBottom, border_color=boxColor, border_width=zoneBorderWidth, bgcolor=boxFill)
+        touchLabel := label.new(bar_index, boxTop, "touches: 1", style=label.style_none, textcolor=color.new(color.white, 30), size=size.tiny, yloc=yloc.price)
+        array.push(zoneBoxes,  activeBox)
+        array.push(zoneLabels, touchLabel)
+    else
+        touchCount := touchCount + 1
+        boxTop     := math.max(boxTop,    high + padding)
+        boxBottom  := math.min(boxBottom, low  - padding)
+        box.set_top(activeBox,    boxTop)
+        box.set_bottom(activeBox, boxBottom)
+        box.set_right(activeBox,  bar_index + 1)
+        if showTouchCount and not na(touchLabel)
+            label.set_text(touchLabel, "touches: " + str.tostring(touchCount))
+            label.set_x(touchLabel, bar_index)
+            label.set_y(touchLabel, boxTop)
+    lastTouchBar := bar_index
+
+if not touched and not na(activeBox) and not na(lastTouchBar) and (bar_index - lastTouchBar) == 1
+    box.set_right(activeBox, bar_index)
+    activeBox := na
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 4 — VOLUME
+// ═══════════════════════════════════════════════════════════════════════════════
+
+showVolInZone   = input.bool(true,  "Show Volume Intensity In Zone",  group="Volume")
+showVolDelta    = input.bool(true,  "Show Bull/Bear Volume Delta",     group="Volume")
+showVolStrength = input.bool(true,  "Show Volume Strength Label",      group="Volume")
+volBaseLen      = input.int(20,     "Relative Volume Baseline Length", minval=5, group="Volume")
+volSpikeThresh  = input.float(2.0,  "High Volume Threshold (x Avg)",  step=0.1, minval=0.5, group="Volume")
+volDryThresh    = input.float(0.5,  "Low Volume Threshold (x Avg)",   step=0.1, minval=0.1, group="Volume")
+
+colorVolBullHigh = input.color(color.new(#00FF88, 55), "High Bull Volume",   group="Volume")
+colorVolBullNorm = input.color(color.new(#00FF88, 78), "Normal Bull Volume", group="Volume")
+colorVolBearHigh = input.color(color.new(#FF3355, 55), "High Bear Volume",   group="Volume")
+colorVolBearNorm = input.color(color.new(#FF3355, 78), "Normal Bear Volume", group="Volume")
+colorVolDry      = input.color(color.new(#AAAAAA, 75), "Low / Absorption",   group="Volume")
+colorVolSpike    = input.color(color.new(#FFFF00, 55), "Spike Confluence",   group="Volume")
+
+adaptedVolBase = adaptVolBase(volBaseLen)
+volEMA         = ta.ema(volume, adaptedVolBase)
+volMedianProxy = ta.sma(volume, adaptedVolBase * 2)
+volBaseline    = math.min(volEMA, volMedianProxy)
+relVol         = volume / math.max(volBaseline, 0.0001)
+
+candleRange  = high - low
+bullPressure = candleRange > 0 ? (close - low) / candleRange : 0.5
+bullVol      = volume * bullPressure
+bearVol      = volume * (1.0 - bullPressure)
+bullDominant = bullVol > bearVol
+isHighVol    = relVol >= volSpikeThresh
+isDryVol     = relVol <= volDryThresh
+
+volZoneColor =
+     isDryVol     ? colorVolDry   :
+     isHighVol    ? colorVolSpike :
+     bullDominant ? (relVol > 1.2 ? colorVolBullHigh : colorVolBullNorm) :
+     (relVol > 1.2 ? colorVolBearHigh : colorVolBearNorm)
+
+volStrengthText(rv) =>
+    rv >= volSpikeThresh ? "⚡ " + str.tostring(math.round(rv, 1)) + "x" :
+     rv <= volDryThresh  ? "💧 " + str.tostring(math.round(rv, 1)) + "x" :
+     str.tostring(math.round(rv, 1)) + "x"
+
+var array<box>   volBoxes      = array.new_box(0)
+var array<label> volLabels     = array.new_label(0)
+var array<line>  volDeltaLines = array.new_line(0)
+
+if showVolInZone and not na(activeBox) and touched
+    newVolBox = box.new(bar_index, boxTop, bar_index + 1, boxBottom, border_color=na, bgcolor=volZoneColor)
+    array.push(volBoxes, newVolBox)
+    if array.size(volBoxes) > 500
+        box.delete(array.shift(volBoxes))
+    if showVolStrength
+        volLbl = label.new(bar_index, boxBottom, volStrengthText(relVol), style=label.style_none, textcolor=color.new(color.white, 20), size=size.tiny, yloc=yloc.price)
+        array.push(volLabels, volLbl)
+        if array.size(volLabels) > 500
+            label.delete(array.shift(volLabels))
+
+if showVolDelta and not na(activeBox) and touched
+    deltaCol  = bullDominant ? color.new(#00FF88, 40) : color.new(#FF3355, 40)
+    deltaLine = line.new(bar_index, boxBottom, bar_index, boxBottom - (zoneAtr * 0.3 * math.min(relVol, 3.0)), color=deltaCol, width=2, style=line.style_solid)
+    array.push(volDeltaLines, deltaLine)
+    if array.size(volDeltaLines) > 500
+        line.delete(array.shift(volDeltaLines))
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 5 — FILTER ENGINE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+useFilters      = input.bool(true,  "Enable Signal Filtering",       group="Filters")
+showFilterState = input.bool(true,  "Show Filter State Indicator",   group="Filters")
+showConsolBG    = input.bool(true,  "Show Consolidation Background", group="Filters")
+filterMode      = input.string("EMA Spread", "Filter Mode", options=["EMA Spread", "ADX", "Both"], group="Filters")
+emaSpreadPct    = input.float(0.5,  "Min EMA25/200 Spread %",  step=0.1, minval=0.1, maxval=5.0,  group="Filters")
+volThreshold    = input.float(1.0,  "Min Volume (x Avg)",      step=0.1, minval=0.1,              group="Filters")
+adxLen          = input.int(14,     "ADX Length",              minval=1, maxval=50,               group="Filters")
+adxThreshold    = input.float(20.0, "Min ADX Threshold",       step=0.5, minval=5.0, maxval=50.0, group="Filters")
+consolBGColor   = input.color(color.new(color.gray, 85), "Consolidation BG Color", group="Filters")
+
+emaSpread    = math.abs(ema25 - ema200) / math.max(ema200, 0.0001) * 100
+emaTrending  = emaSpread >= emaSpreadPct
+signalVolume = relVol >= volThreshold
+
+adxHighDiff = high - high[1]
+adxLowDiff  = low[1] - low
+plusDM      = adxHighDiff > adxLowDiff and adxHighDiff > 0 ? adxHighDiff : 0.0
+minusDM     = adxLowDiff > adxHighDiff and adxLowDiff  > 0 ? adxLowDiff  : 0.0
+trueRange   = math.max(high - low, math.max(math.abs(high - close[1]), math.abs(low - close[1])))
+atrAdx      = ta.rma(trueRange, adxLen)
+plusDI      = ta.rma(plusDM,  adxLen) / math.max(atrAdx, 0.0001) * 100
+minusDI     = ta.rma(minusDM, adxLen) / math.max(atrAdx, 0.0001) * 100
+dxVal       = (plusDI + minusDI) > 0 ? math.abs(plusDI - minusDI) / (plusDI + minusDI) * 100 : 0.0
+adxVal      = ta.rma(dxVal, adxLen)
+adxTrending = adxVal >= adxThreshold
+
+trendFilter   = filterMode == "EMA Spread" ? emaTrending : filterMode == "ADX" ? adxTrending : emaTrending and adxTrending
+signalAllowed = not useFilters or (trendFilter and signalVolume)
+
+isConsolidating = not trendFilter or not signalVolume
+consolSmooth    = ta.sma(isConsolidating ? 1.0 : 0.0, 5)
+bgcolor(showConsolBG and consolSmooth >= 0.6 ? consolBGColor : na, title="Consolidation Background")
+
+filterJustOn  = signalAllowed and not signalAllowed[1]
+filterJustOff = not signalAllowed and signalAllowed[1]
+
+alertcondition(filterJustOn,  "✅ Market Now Trending",      "✅ Market conditions met — signals now active")
+alertcondition(filterJustOff, "🚫 Market Now Consolidating", "🚫 Market consolidating — signals now blocked")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 6 — BOS & CHoCH
+// ═══════════════════════════════════════════════════════════════════════════════
+
+showBOS       = input.bool(true, "Show BOS / CHoCH",            group="BOS")
+bosLen        = input.int(10,    "BOS Pivot Length",             minval=3, maxval=30, group="BOS")
+trendLookback = input.int(6,     "Trend Context Pivots",         minval=2, maxval=10, group="BOS")
+maxBOSLevels  = input.int(12,    "Max Pending Levels Per Side",  minval=5, maxval=20, group="BOS")
+
+bosUpColor   = input.color(color.new(color.green,  0), "BOS Up Color",     group="BOS")
+bosDnColor   = input.color(color.new(color.red,    0), "BOS Down Color",   group="BOS")
+chochUpColor = input.color(color.new(color.aqua,   0), "CHoCH Up Color",   group="BOS")
+chochDnColor = input.color(color.new(color.orange, 0), "CHoCH Down Color", group="BOS")
+invalidColor = color.new(color.gray, 60)
+
+bosExtend = adaptBosExtend()
+
+swingH = ta.pivothigh(high, bosLen, bosLen)
+swingL = ta.pivotlow(low,   bosLen, bosLen)
+
+var array<float> pivotHighHistory    = array.new_float(0)
+var array<int>   pivotHighBarHistory = array.new_int(0)
+var array<float> pivotLowHistory     = array.new_float(0)
+var array<int>   pivotLowBarHistory  = array.new_int(0)
+
+if not na(swingH)
+    array.push(pivotHighHistory,    swingH)
+    array.push(pivotHighBarHistory, bar_index)
+    if array.size(pivotHighHistory) > trendLookback
+        array.shift(pivotHighHistory)
+        array.shift(pivotHighBarHistory)
+
+if not na(swingL)
+    array.push(pivotLowHistory,    swingL)
+    array.push(pivotLowBarHistory, bar_index)
+    if array.size(pivotLowHistory) > trendLookback
+        array.shift(pivotLowHistory)
+        array.shift(pivotLowBarHistory)
+
+weightedBullScore = 0.0
+weightedBearScore = 0.0
+
+if array.size(pivotHighHistory) >= 2
+    n = array.size(pivotHighHistory)
+    for i = 1 to n - 1
+        weight = float(i)
+        if array.get(pivotHighHistory, i) > array.get(pivotHighHistory, i - 1)
+            weightedBullScore += weight
+        else
+            weightedBearScore += weight
+
+htfBullTrend = weightedBullScore > weightedBearScore
+htfBearTrend = weightedBearScore > weightedBullScore
+
+totalTrendScore = weightedBullScore + weightedBearScore
+bullConfidence  = totalTrendScore > 0 ? weightedBullScore / totalTrendScore : 0.5
+bearConfidence  = totalTrendScore > 0 ? weightedBearScore / totalTrendScore : 0.5
+
+// ── ADAPTIVE LEARNING ENGINE ──────────────────────────────────────────────────
+
+outcomeWindow = adaptOutcomeWindow()
+successAtr    = adaptSuccessAtr()
+signalAtr     = ta.atr(14)
+
+var array<int>   pendingSignalBars  = array.new_int(0)
+var array<float> pendingSignalPrice = array.new_float(0)
+var array<bool>  pendingSignalBull  = array.new_bool(0)
+var array<float> pendingSignalAtr   = array.new_float(0)
+
+var int   bullTotal   = 0
+var int   bullSuccess = 0
+var int   bearTotal   = 0
+var int   bearSuccess = 0
+
+bullAccuracy = bullTotal >= 5 ? float(bullSuccess) / float(bullTotal) : 0.65
+bearAccuracy = bearTotal >= 5 ? float(bearSuccess) / float(bearTotal) : 0.65
+
+adaptiveBullThresh = math.max(0.52, math.min(0.78, 0.3 * 0.60 + 0.7 * bullAccuracy))
+adaptiveBearThresh = math.max(0.52, math.min(0.78, 0.3 * 0.60 + 0.7 * bearAccuracy))
+
+trendConfirmed =
+     bullConfidence >= adaptiveBullThresh or
+     bearConfidence >= adaptiveBearThresh
+
+rawFlipBull = htfBullConfirm and not htfBullConfirm[1]
+rawFlipBear = htfBearConfirm and not htfBearConfirm[1]
+
+if rawFlipBull or rawFlipBear
+    array.push(pendingSignalBars,  bar_index)
+    array.push(pendingSignalPrice, close)
+    array.push(pendingSignalBull,  rawFlipBull)
+    array.push(pendingSignalAtr,   signalAtr)
+    if array.size(pendingSignalBars) > 30
+        array.shift(pendingSignalBars)
+        array.shift(pendingSignalPrice)
+        array.shift(pendingSignalBull)
+        array.shift(pendingSignalAtr)
+
+if array.size(pendingSignalBars) > 0
+    i = 0
+    while i < array.size(pendingSignalBars)
+        sigBar      = array.get(pendingSignalBars,  i)
+        sigPrice    = array.get(pendingSignalPrice, i)
+        sigBull     = array.get(pendingSignalBull,  i)
+        sigAtr      = array.get(pendingSignalAtr,   i)
+        barsElapsed = bar_index - sigBar
+        if barsElapsed >= outcomeWindow
+            target    = sigAtr * successAtr
+            succeeded = sigBull ? (high - sigPrice) >= target : (sigPrice - low) >= target
+            if sigBull
+                bullTotal   += 1
+                bullSuccess += succeeded ? 1 : 0
+            else
+                bearTotal   += 1
+                bearSuccess += succeeded ? 1 : 0
+            array.remove(pendingSignalBars,  i)
+            array.remove(pendingSignalPrice, i)
+            array.remove(pendingSignalBull,  i)
+            array.remove(pendingSignalAtr,   i)
+        else
+            i += 1
+
+// ── END ADAPTIVE LEARNING ENGINE ─────────────────────────────────────────────
+
+var array<float> pendingHighLevels = array.new_float(0)
+var array<float> pendingLowLevels  = array.new_float(0)
+
+if not na(swingH)
+    array.push(pendingHighLevels, swingH)
+    if array.size(pendingHighLevels) > maxBOSLevels
+        array.shift(pendingHighLevels)
+
+if not na(swingL)
+    array.push(pendingLowLevels, swingL)
+    if array.size(pendingLowLevels) > maxBOSLevels
+        array.shift(pendingLowLevels)
+
+var array<float> brokenHighLevels = array.new_float(0)
+var array<float> brokenLowLevels  = array.new_float(0)
+var array<line>  brokenHighLines  = array.new_line(0)
+var array<line>  brokenLowLines   = array.new_line(0)
+var array<label> brokenHighLabels = array.new_label(0)
+var array<label> brokenLowLabels  = array.new_label(0)
+
+maxLevels = 15
+bosUp     = false
+bosDown   = false
+chochUp   = false
+chochDown = false
+
+if showBOS and signalAllowed
+    if array.size(pendingHighLevels) > 0
+        i = 0
+        while i < array.size(pendingHighLevels)
+            lvl = array.get(pendingHighLevels, i)
+            if close > lvl and close[1] <= lvl
+                isCHoCH  = htfBearTrend and trendConfirmed
+                bosUp    := not isCHoCH
+                chochUp  := isCHoCH
+                lineStyle = isCHoCH ? line.style_dashed : line.style_dotted
+                lineCol   = isCHoCH ? chochUpColor : bosUpColor
+                lblText   = isCHoCH ? "CHoCH" : "BOS"
+                newLine   = line.new(bar_index, lvl, bar_index + bosExtend, lvl, color=lineCol, width=1, style=lineStyle)
+                newLabel  = label.new(bar_index + bosExtend, lvl, lblText, style=label.style_none, textcolor=lineCol, size=size.normal)
+                array.push(brokenHighLevels, lvl)
+                array.push(brokenHighLines,  newLine)
+                array.push(brokenHighLabels, newLabel)
+                if array.size(brokenHighLevels) > maxLevels
+                    array.shift(brokenHighLevels)
+                    array.shift(brokenHighLines)
+                    array.shift(brokenHighLabels)
+                array.remove(pendingHighLevels, i)
+            else
+                i += 1
+
+    if array.size(pendingLowLevels) > 0
+        j = 0
+        while j < array.size(pendingLowLevels)
+            lvl = array.get(pendingLowLevels, j)
+            if close < lvl and close[1] >= lvl
+                isCHoCH  = htfBullTrend and trendConfirmed
+                bosDown   := not isCHoCH
+                chochDown := isCHoCH
+                lineStyle = isCHoCH ? line.style_dashed : line.style_dotted
+                lineCol   = isCHoCH ? chochDnColor : bosDnColor
+                lblText   = isCHoCH ? "CHoCH" : "BOS"
+                newLine   = line.new(bar_index, lvl, bar_index + bosExtend, lvl, color=lineCol, width=1, style=lineStyle)
+                newLabel  = label.new(bar_index + bosExtend, lvl, lblText, style=label.style_none, textcolor=lineCol, size=size.normal)
+                array.push(brokenLowLevels, lvl)
+                array.push(brokenLowLines,  newLine)
+                array.push(brokenLowLabels, newLabel)
+                if array.size(brokenLowLevels) > maxLevels
+                    array.shift(brokenLowLevels)
+                    array.shift(brokenLowLines)
+                    array.shift(brokenLowLabels)
+                array.remove(pendingLowLevels, j)
+            else
+                j += 1
+
+if array.size(brokenHighLevels) > 0
+    for i = 0 to array.size(brokenHighLevels) - 1
+        lvl = array.get(brokenHighLevels, i)
+        if not na(lvl) and close < lvl
+            line.set_color(array.get(brokenHighLines,  i), invalidColor)
+            label.set_textcolor(array.get(brokenHighLabels, i), invalidColor)
+            array.set(brokenHighLevels, i, na)
+
+if array.size(brokenLowLevels) > 0
+    for i = 0 to array.size(brokenLowLevels) - 1
+        lvl = array.get(brokenLowLevels, i)
+        if not na(lvl) and close > lvl
+            line.set_color(array.get(brokenLowLines,  i), invalidColor)
+            label.set_textcolor(array.get(brokenLowLabels, i), invalidColor)
+            array.set(brokenLowLevels, i, na)
+
+alertcondition(bosUp,     "🟢 BOS Bullish",   "🟢 BOS Bullish — Structure broken to the upside")
+alertcondition(bosDown,   "🔴 BOS Bearish",   "🔴 BOS Bearish — Structure broken to the downside")
+alertcondition(chochUp,   "🔵 CHoCH Bullish", "🔵 CHoCH Bullish — Character shift detected")
+alertcondition(chochDown, "🟠 CHoCH Bearish", "🟠 CHoCH Bearish — Character shift detected")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 6B — SESSION / KILL ZONE FILTER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+useSessionFilter  = input.bool(false, "Enable Session Filter",        group="Sessions")
+showSessionBG     = input.bool(true,  "Show Session Background",      group="Sessions")
+useAsianSession   = input.bool(false, "Allow Asian Session Signals",  group="Sessions")
+useLondonSession  = input.bool(true,  "Allow London Session Signals", group="Sessions")
+useNYSession      = input.bool(true,  "Allow NY Session Signals",     group="Sessions")
+useNYLondonOL     = input.bool(true,  "Allow NY/London Overlap",      group="Sessions")
+sessionTimezone   = input.string("America/New_York", "Timezone", options=["America/New_York","Europe/London","UTC"], group="Sessions")
+
+asianColor  = input.color(color.new(#FFD700, 92), "Asian Session Color",   group="Sessions")
+londonColor = input.color(color.new(#00BFFF, 92), "London Session Color",  group="Sessions")
+nyColor     = input.color(color.new(#00FF88, 92), "NY Session Color",      group="Sessions")
+olColor     = input.color(color.new(#FF88FF, 92), "Overlap Session Color", group="Sessions")
+
+isAsianSession  = not na(time("1", "2000-0600:1234567", sessionTimezone))
+isLondonSession = not na(time("1", "0300-0800:1234567", sessionTimezone))
+isNYSession     = not na(time("1", "0800-1700:1234567", sessionTimezone))
+isNYLondonOL    = not na(time("1", "0800-1200:1234567", sessionTimezone))
+
+activeSession =
+     isNYLondonOL    ? "overlap" :
+     isNYSession     ? "ny"      :
+     isLondonSession ? "london"  :
+     isAsianSession  ? "asian"   : "off"
+
+sessionAllowed =
+     not useSessionFilter ? true :
+     activeSession == "overlap" ? useNYLondonOL    :
+     activeSession == "ny"      ? useNYSession     :
+     activeSession == "london"  ? useLondonSession :
+     activeSession == "asian"   ? useAsianSession  : false
+
+sessionBGColor =
+     activeSession == "overlap" ? olColor     :
+     activeSession == "ny"      ? nyColor     :
+     activeSession == "london"  ? londonColor :
+     activeSession == "asian"   ? asianColor  : na
+
+bgcolor(showSessionBG and useSessionFilter ? sessionBGColor : na, title="Session Background")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 7 — FAIR VALUE GAPS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+showFVG         = input.bool(true,  "Show Fair Value Gaps",          group="FVG")
+deleteMitigated = input.bool(false, "Delete Fully Mitigated FVGs",   group="FVG")
+showUnmitigated = input.bool(false, "Show Only Unmitigated FVGs",    group="FVG")
+extendFVG       = input.bool(true,  "Extend FVGs Until Filled",      group="FVG")
+showFVGMidline  = input.bool(true,  "Show 50% Midline",              group="FVG")
+showFVGLabel    = input.bool(true,  "Show Gap Size Label (ATR-rel)", group="FVG")
+showFVGGrade    = input.bool(true,  "Show FVG Quality Grade",        group="FVG")
+fvgAtrLen       = input.int(14,     "ATR Length",        minval=1,                  group="FVG")
+fvgMinAtrMult   = input.float(0.1,  "Min Gap Size (x ATR)", step=0.05, minval=0.01, group="FVG")
+fvgBiasFilter   = input.string("Off","HTF Bias Filter", options=["Off","Targets Only","Entries Only","Both"], group="FVG")
+maxFVGs         = input.int(50,     "Max FVGs On Chart", minval=5, maxval=100,      group="FVG")
+
+bullFVGBorder   = input.color(color.new(color.teal,   60), "Bull FVG Border", group="FVG")
+bullFVGFill     = input.color(color.new(color.teal,   85), "Bull FVG Fill",   group="FVG")
+bearFVGBorder   = input.color(color.new(color.orange, 60), "Bear FVG Border", group="FVG")
+bearFVGFill     = input.color(color.new(color.orange, 85), "Bear FVG Fill",   group="FVG")
+fvgMidlineColor = input.color(color.new(color.white,  60), "Midline Color",   group="FVG")
+mitigatedColor  = color.new(color.gray,   80)
+partialMitColor = color.new(color.yellow, 80)
+
+fvgAtr         = ta.atr(fvgAtrLen)
+adaptedMaxFVGs = adaptMaxFVGs(maxFVGs)
+
+fvgGapValid(gapSize) => gapSize >= fvgAtr * fvgMinAtrMult
+
+fvgGrade(gapSize, rv) =>
+    atrMult  = gapSize / math.max(fvgAtr, 0.0001)
+    isHighRV = rv >= volSpikeThresh
+    isLargeG = atrMult >= 0.5
+    isHighRV and isLargeG ? "A" : isHighRV or isLargeG ? "B" : "C"
+
+gradeAlpha(grade) =>
+    grade == "A" ? 65 : grade == "B" ? 78 : 88
+
+bullFVGDetect = low > high[2]
+bearFVGDetect = high < low[2]
+bullFVGSize   = bullFVGDetect ? low - high[2] : 0.0
+bearFVGSize   = bearFVGDetect ? low[2] - high : 0.0
+
+showBullFVG = fvgBiasFilter == "Off" ? true : fvgBiasFilter == "Targets Only" ? htfBullConfirm : fvgBiasFilter == "Entries Only" ? htfBearConfirm : true
+showBearFVG = fvgBiasFilter == "Off" ? true : fvgBiasFilter == "Targets Only" ? htfBearConfirm : fvgBiasFilter == "Entries Only" ? htfBullConfirm : true
+
+var array<box>   fvgBoxes      = array.new_box(0)
+var array<float> fvgTops       = array.new_float(0)
+var array<float> fvgBottoms    = array.new_float(0)
+var array<float> fvgMids       = array.new_float(0)
+var array<bool>  fvgIsBull     = array.new_bool(0)
+var array<int>   fvgMitState   = array.new_int(0)
+var array<label> fvgLabels     = array.new_label(0)
+var array<line>  fvgMidlines   = array.new_line(0)
+var array<float> fvgFormRelVol = array.new_float(0)
+
+addFVG(topVal, bottomVal, isBull, formRV) =>
+    gapSize   = topVal - bottomVal
+    grade     = showFVGGrade ? fvgGrade(gapSize, formRV) : "B"
+    alpha     = gradeAlpha(grade)
+    borderCol = isBull ? color.new(color.teal,   math.max(0, alpha - 25)) : color.new(color.orange, math.max(0, alpha - 25))
+    fillCol   = isBull ? color.new(color.teal,   alpha)                   : color.new(color.orange, alpha)
+    midVal    = (topVal + bottomVal) / 2.0
+    atrMult   = math.round(gapSize / math.max(fvgAtr, 0.0001), 2)
+    gradeText = showFVGGrade ? " [" + grade + "]" : ""
+    labelText = showFVGLabel ? str.tostring(atrMult) + "x ATR" + gradeText : ""
+    newBox    = box.new(bar_index - 2, topVal, bar_index + 1, bottomVal, border_color=borderCol, bgcolor=fillCol)
+    newLabel  = label.new(bar_index, topVal, labelText, style=label.style_none, textcolor=color.new(color.white, 40), size=size.tiny, yloc=yloc.price)
+    newMid    = showFVGMidline ? line.new(bar_index - 2, midVal, bar_index + 1, midVal, color=fvgMidlineColor, style=line.style_dashed, width=1) : na
+    array.push(fvgBoxes,      newBox)
+    array.push(fvgTops,       topVal)
+    array.push(fvgBottoms,    bottomVal)
+    array.push(fvgMids,       midVal)
+    array.push(fvgIsBull,     isBull)
+    array.push(fvgMitState,   0)
+    array.push(fvgLabels,     newLabel)
+    array.push(fvgMidlines,   newMid)
+    array.push(fvgFormRelVol, formRV)
+    if array.size(fvgBoxes) > adaptedMaxFVGs
+        box.delete(array.shift(fvgBoxes))
+        label.delete(array.shift(fvgLabels))
+        midToDelete = array.shift(fvgMidlines)
+        if not na(midToDelete)
+            line.delete(midToDelete)
+        array.shift(fvgTops)
+        array.shift(fvgBottoms)
+        array.shift(fvgMids)
+        array.shift(fvgIsBull)
+        array.shift(fvgMitState)
+        array.shift(fvgFormRelVol)
+
+if showFVG
+    if bullFVGDetect and fvgGapValid(bullFVGSize) and showBullFVG and signalAllowed
+        addFVG(low, high[2], true, relVol)
+    if bearFVGDetect and fvgGapValid(bearFVGSize) and showBearFVG and signalAllowed
+        addFVG(low[2], high, false, relVol)
+
+    if array.size(fvgBoxes) > 0
+        for i = 0 to array.size(fvgBoxes) - 1
+            mitState   = array.get(fvgMitState,   i)
+            topVal     = array.get(fvgTops,       i)
+            bottomVal  = array.get(fvgBottoms,    i)
+            midVal     = array.get(fvgMids,       i)
+            isBull     = array.get(fvgIsBull,     i)
+            currentBox = array.get(fvgBoxes,      i)
+            currentLbl = array.get(fvgLabels,     i)
+            currentMid = array.get(fvgMidlines,   i)
+
+            if mitState == 0 and extendFVG
+                box.set_right(currentBox, bar_index + 1)
+                label.set_x(currentLbl,  bar_index)
+                if not na(currentMid)
+                    line.set_x2(currentMid, bar_index + 1)
+
+            if mitState == 1 and extendFVG
+                box.set_right(currentBox, bar_index + 1)
+
+            partialHit = isBull ? (low <= midVal and mitState == 0) : (high >= midVal and mitState == 0)
+            if partialHit
+                array.set(fvgMitState, i, 1)
+                box.set_bgcolor(currentBox,      partialMitColor)
+                box.set_border_color(currentBox, partialMitColor)
+                if not na(currentMid)
+                    line.delete(currentMid)
+                    array.set(fvgMidlines, i, na)
+
+            fullHit = isBull ? close < bottomVal : close > topVal
+            if fullHit and mitState < 2
+                array.set(fvgMitState, i, 2)
+                if deleteMitigated
+                    box.delete(currentBox)
+                    label.delete(currentLbl)
+                    if not na(currentMid)
+                        line.delete(currentMid)
+                        array.set(fvgMidlines, i, na)
+                else
+                    box.set_bgcolor(currentBox,      mitigatedColor)
+                    box.set_border_color(currentBox, mitigatedColor)
+                    label.set_textcolor(currentLbl,  mitigatedColor)
+
+            if showUnmitigated and mitState == 2
+                box.set_bgcolor(currentBox,      color.new(color.black, 100))
+                box.set_border_color(currentBox, color.new(color.black, 100))
+                label.set_textcolor(currentLbl,  color.new(color.black, 100))
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 8 — ORDER BLOCKS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+showOB            = input.bool(true,  "Show Order Blocks",                       group="Order Blocks")
+extendOB          = input.bool(true,  "Extend OBs Until Mitigated",              group="Order Blocks")
+deleteMitigatedOB = input.bool(false, "Delete Mitigated OBs",                    group="Order Blocks")
+showBothOB        = input.bool(false, "Show Both Directions Regardless of Bias", group="Order Blocks")
+obLen             = input.int(5,      "Initial OB Width (bars)",  minval=2, maxval=20,  group="Order Blocks")
+maxOBs            = input.int(20,     "Max Order Blocks On Chart",minval=5, maxval=50,  group="Order Blocks")
+obAtrLen          = input.int(14,     "ATR Length (Min Size)",    minval=1,              group="Order Blocks")
+obMinSize         = input.float(0.5,  "Min OB Size (x ATR)",     minval=0.1, step=0.1, group="Order Blocks")
+obBiasFilter      = input.string("Off","HTF Bias Filter", options=["Off","Targets Only","Entries Only","Both"], group="Order Blocks")
+
+bullOBBorder     = input.color(color.new(#00FF88, 40), "Bull OB Border",    group="Order Blocks")
+bullOBFill       = input.color(color.new(#00FF88, 88), "Bull OB Fill",      group="Order Blocks")
+bearOBBorder     = input.color(color.new(#FF3355, 40), "Bear OB Border",    group="Order Blocks")
+bearOBFill       = input.color(color.new(#FF3355, 88), "Bear OB Fill",      group="Order Blocks")
+mitigatedOBColor = color.new(color.gray, 80)
+bullDotColor     = input.color(color.new(#00FF88, 0),  "Bull OB Dot Color", group="Order Blocks")
+bearDotColor     = input.color(color.new(#FF3355, 0),  "Bear OB Dot Color", group="Order Blocks")
+
+obAtr       = ta.atr(obAtrLen)
+obBodySize  = math.abs(close - open)
+obSizeValid = obBodySize >= obAtr * obMinSize
+
+showBullOB = showBothOB ? true : obBiasFilter == "Off" ? true : obBiasFilter == "Targets Only" ? htfBullConfirm : obBiasFilter == "Entries Only" ? htfBearConfirm : true
+showBearOB = showBothOB ? true : obBiasFilter == "Off" ? true : obBiasFilter == "Targets Only" ? htfBearConfirm : obBiasFilter == "Entries Only" ? htfBullConfirm : true
+
+bullOB = close[1] < open[1] and close > open and close > high[1] and obSizeValid
+bearOB = close[1] > open[1] and close < open and close < low[1]  and obSizeValid
+
+var array<box>   obBoxes     = array.new_box(0)
+var array<float> obTops      = array.new_float(0)
+var array<float> obBottoms   = array.new_float(0)
+var array<bool>  obIsBull    = array.new_bool(0)
+var array<bool>  obMitigated = array.new_bool(0)
+var array<label> obLabels    = array.new_label(0)
+
+addOB(topVal, bottomVal, isBull) =>
+    borderCol = isBull ? bullOBBorder : bearOBBorder
+    fillCol   = isBull ? bullOBFill   : bearOBFill
+    newBox    = box.new(bar_index - 1, topVal, bar_index + obLen, bottomVal, border_color=borderCol, bgcolor=fillCol)
+    obText    = str.tostring(math.round((topVal - bottomVal) / math.max(obAtr, 0.0001), 2)) + "x ATR"
+    newLabel  = label.new(bar_index - 1, topVal, obText, style=label.style_none, textcolor=color.new(color.white, 40), size=size.tiny, yloc=yloc.price)
+    array.push(obBoxes,     newBox)
+    array.push(obTops,      topVal)
+    array.push(obBottoms,   bottomVal)
+    array.push(obIsBull,    isBull)
+    array.push(obMitigated, false)
+    array.push(obLabels,    newLabel)
+    if array.size(obBoxes) > maxOBs
+        box.delete(array.shift(obBoxes))
+        label.delete(array.shift(obLabels))
+        array.shift(obTops)
+        array.shift(obBottoms)
+        array.shift(obIsBull)
+        array.shift(obMitigated)
+
+if showOB
+    if bullOB and showBullOB and signalAllowed
+        addOB(math.max(open[1], close[1]), math.min(open[1], close[1]), true)
+    if bearOB and showBearOB and signalAllowed
+        addOB(math.max(open[1], close[1]), math.min(open[1], close[1]), false)
+    if array.size(obBoxes) > 0
+        for i = 0 to array.size(obBoxes) - 1
+            isMitigated = array.get(obMitigated, i)
+            topVal      = array.get(obTops,      i)
+            bottomVal   = array.get(obBottoms,   i)
+            isBull      = array.get(obIsBull,    i)
+            currentBox  = array.get(obBoxes,     i)
+            currentLbl  = array.get(obLabels,    i)
+            dotCol      = isBull ? bullDotColor : bearDotColor
+            if not isMitigated and extendOB
+                box.set_right(currentBox, bar_index + 1)
+                label.set_x(currentLbl,  bar_index)
+            if not extendOB and not isMitigated
+                wickTouched = (isBull and low <= topVal and low >= bottomVal) or (not isBull and high >= bottomVal and high <= topVal)
+                closeBroke  = isBull ? close < bottomVal : close > topVal
+                if wickTouched
+                    label.new(bar_index, isBull ? bottomVal : topVal, "•", style=label.style_none, textcolor=dotCol, size=size.small)
+                if closeBroke
+                    label.new(bar_index, isBull ? bottomVal : topVal, "•", style=label.style_none, textcolor=dotCol, size=size.small)
+            fullyMitigated = isBull ? close < bottomVal : close > topVal
+            if fullyMitigated and not isMitigated
+                array.set(obMitigated, i, true)
+                if deleteMitigatedOB
+                    box.delete(currentBox)
+                    label.delete(currentLbl)
+                else
+                    box.set_bgcolor(currentBox,      mitigatedOBColor)
+                    box.set_border_color(currentBox, mitigatedOBColor)
+                    label.set_textcolor(currentLbl,  mitigatedOBColor)
+
+alertcondition(bullOB and showBullOB, "🟢 Bull Order Block", "🟢 Bull Order Block — New OB formed")
+alertcondition(bearOB and showBearOB, "🔴 Bear Order Block", "🔴 Bear Order Block — New OB formed")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 9 — LIQUIDITY SWEEPS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+showSweep       = input.bool(true,  "Show Liquidity Sweeps",            group="Sweep")
+sweepLen        = input.int(10,     "Sweep Pivot Lookback",             minval=3,  maxval=50,  group="Sweep")
+sweepExtend     = input.int(20,     "Sweep Line Extension (bars)",      minval=5,  maxval=100, group="Sweep")
+sweepAtrLen     = input.int(14,     "ATR Length (Strength Filter)",     minval=1,              group="Sweep")
+sweepMinSize    = input.float(0.5,  "Min Sweep Size (x ATR)",          minval=0.1, step=0.1,  group="Sweep")
+obSweepDist     = input.float(0.5,  "OB+Sweep Proximity (% of Price)", minval=0.1, step=0.1,  group="Sweep")
+sweepBiasFilter = input.string("Off","HTF Bias Filter", options=["Off","Targets Only","Entries Only","Both"], group="Sweep")
+
+bullSweepColor = input.color(color.new(#00FF88, 0), "Bull Sweep Color", group="Sweep")
+bearSweepColor = input.color(color.new(#FF3355, 0), "Bear Sweep Color", group="Sweep")
+obSweepColor   = input.color(color.new(#FFD700, 0), "OB+Sweep Color",   group="Sweep")
+
+sweepAtr    = ta.atr(sweepAtrLen)
+sweepPivotH = ta.pivothigh(high, sweepLen, sweepLen)
+sweepPivotL = ta.pivotlow(low,   sweepLen, sweepLen)
+
+var float lastSweepHigh = na
+var float lastSweepLow  = na
+
+if not na(sweepPivotH)
+    lastSweepHigh := sweepPivotH
+if not na(sweepPivotL)
+    lastSweepLow  := sweepPivotL
+
+bullSweepDetect = not na(lastSweepLow)  and low  < lastSweepLow  and close > lastSweepLow  and (lastSweepLow  - low)  >= sweepAtr * sweepMinSize
+bearSweepDetect = not na(lastSweepHigh) and high > lastSweepHigh and close < lastSweepHigh and (high - lastSweepHigh) >= sweepAtr * sweepMinSize
+
+showBullSweep = sweepBiasFilter == "Off" ? true : sweepBiasFilter == "Targets Only" ? htfBullConfirm : sweepBiasFilter == "Entries Only" ? htfBearConfirm : true
+showBearSweep = sweepBiasFilter == "Off" ? true : sweepBiasFilter == "Targets Only" ? htfBearConfirm : sweepBiasFilter == "Entries Only" ? htfBullConfirm : true
+
+obSweepProximity = close * (obSweepDist / 100)
+isNearBullOB     = false
+isNearBearOB     = false
+
+if array.size(obBoxes) > 0
+    for i = 0 to array.size(obBoxes) - 1
+        if not array.get(obMitigated, i)
+            obTop  = array.get(obTops,    i)
+            obBot  = array.get(obBottoms, i)
+            obBull = array.get(obIsBull,  i)
+            if obBull and bullSweepDetect
+                if math.abs(lastSweepLow - obTop) <= obSweepProximity or math.abs(lastSweepLow - obBot) <= obSweepProximity
+                    isNearBullOB := true
+            if not obBull and bearSweepDetect
+                if math.abs(lastSweepHigh - obTop) <= obSweepProximity or math.abs(lastSweepHigh - obBot) <= obSweepProximity
+                    isNearBearOB := true
+
+if showSweep
+    if bullSweepDetect and showBullSweep and signalAllowed
+        sweepCol  = isNearBullOB ? obSweepColor : bullSweepColor
+        sweepLvl  = lastSweepLow
+        sweepText = isNearBullOB ? "OB+Sweep  LSB" : "LSB"
+        label.new(bar_index, low, sweepText, style=label.style_label_up, textcolor=color.white, color=sweepCol, size=size.small)
+        line.new(bar_index, sweepLvl, bar_index + sweepExtend, sweepLvl, color=sweepCol, style=line.style_dotted, width=1)
+        if isNearBullOB and array.size(obBoxes) > 0
+            for i = 0 to array.size(obBoxes) - 1
+                if not array.get(obMitigated, i) and array.get(obIsBull, i)
+                    obTop = array.get(obTops,    i)
+                    obBot = array.get(obBottoms, i)
+                    if math.abs(lastSweepLow - obTop) <= obSweepProximity or math.abs(lastSweepLow - obBot) <= obSweepProximity
+                        box.set_border_color(array.get(obBoxes, i), obSweepColor)
+                        box.set_bgcolor(array.get(obBoxes, i),      color.new(obSweepColor, 80))
+        lastSweepLow := na
+
+    if bearSweepDetect and showBearSweep and signalAllowed
+        sweepCol  = isNearBearOB ? obSweepColor : bearSweepColor
+        sweepLvl  = lastSweepHigh
+        sweepText = isNearBearOB ? "OB+Sweep  LSA" : "LSA"
+        label.new(bar_index, high, sweepText, style=label.style_label_down, textcolor=color.white, color=sweepCol, size=size.small)
+        line.new(bar_index, sweepLvl, bar_index + sweepExtend, sweepLvl, color=sweepCol, style=line.style_dotted, width=1)
+        if isNearBearOB and array.size(obBoxes) > 0
+            for i = 0 to array.size(obBoxes) - 1
+                if not array.get(obMitigated, i) and not array.get(obIsBull, i)
+                    obTop = array.get(obTops,    i)
+                    obBot = array.get(obBottoms, i)
+                    if math.abs(lastSweepHigh - obTop) <= obSweepProximity or math.abs(lastSweepHigh - obBot) <= obSweepProximity
+                        box.set_border_color(array.get(obBoxes, i), obSweepColor)
+                        box.set_bgcolor(array.get(obBoxes, i),      color.new(obSweepColor, 80))
+        lastSweepHigh := na
+
+alertcondition(bullSweepDetect and showBullSweep and not isNearBullOB, "🟢 LSB — Bull Liquidity Sweep",     "🟢 LSB — Bullish liquidity sweep detected")
+alertcondition(bearSweepDetect and showBearSweep and not isNearBearOB, "🔴 LSA — Bear Liquidity Sweep",     "🔴 LSA — Bearish liquidity sweep detected")
+alertcondition(bullSweepDetect and showBullSweep and isNearBullOB,     "⭐ OB+Sweep Bull — High Confluence", "⭐ OB+Sweep Bullish — Liquidity sweep near Order Block")
+alertcondition(bearSweepDetect and showBearSweep and isNearBearOB,     "⭐ OB+Sweep Bear — High Confluence", "⭐ OB+Sweep Bearish — Liquidity sweep near Order Block")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 10 — HTF BIAS DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════════
+
+showHTFBG       = input.bool(true,  "Show HTF Bias Background",   group="HTF Bias")
+showHTFDash     = input.bool(true,  "Show HTF Bias Dashboard",    group="HTF Bias")
+showBiasFlip    = input.bool(true,  "Show Bias Flip Markers",     group="HTF Bias")
+showAccuracy    = input.bool(true,  "Show Accuracy In Dashboard", group="HTF Bias")
+signalDirection = input.string("Both", "Signal Direction", options=["Bull Only", "Bear Only", "Both"], group="HTF Bias")
+useHTFStructConfirm = input.bool(false, "Require HTF Structure Confluence", group="HTF Bias")
+
+showBullSignal = signalDirection == "Both" or signalDirection == "Bull Only"
+showBearSignal = signalDirection == "Both" or signalDirection == "Bear Only"
+
+htf1hEMA  = showHTFDash ? request.security(syminfo.tickerid, "60",  ta.ema(close, 200),    lookahead=barmerge.lookahead_off) : na
+htf4hEMA  = showHTFDash ? request.security(syminfo.tickerid, "240", ta.ema(close, 200),    lookahead=barmerge.lookahead_off) : na
+htf1dEMA  = showHTFDash ? request.security(syminfo.tickerid, "D",   ta.ema(close, 200),    lookahead=barmerge.lookahead_off) : na
+htf1hPrev = showHTFDash ? request.security(syminfo.tickerid, "60",  ta.ema(close, 200)[1], lookahead=barmerge.lookahead_off) : na
+htf4hPrev = showHTFDash ? request.security(syminfo.tickerid, "240", ta.ema(close, 200)[1], lookahead=barmerge.lookahead_off) : na
+htf1dPrev = showHTFDash ? request.security(syminfo.tickerid, "D",   ta.ema(close, 200)[1], lookahead=barmerge.lookahead_off) : na
+
+bull1h = not na(htf1hEMA) and close > htf1hEMA and htf1hEMA > htf1hPrev
+bear1h = not na(htf1hEMA) and close < htf1hEMA and htf1hEMA < htf1hPrev
+bull4h = not na(htf4hEMA) and close > htf4hEMA and htf4hEMA > htf4hPrev
+bear4h = not na(htf4hEMA) and close < htf4hEMA and htf4hEMA < htf4hPrev
+bull1d = not na(htf1dEMA) and close > htf1dEMA and htf1dEMA > htf1dPrev
+bear1d = not na(htf1dEMA) and close < htf1dEMA and htf1dEMA < htf1dPrev
+
+htfDist1h = not na(htf1hEMA) ? math.round((close - htf1hEMA) / math.max(htf1hEMA, 0.0001) * 100, 2) : 0.0
+htfDist4h = not na(htf4hEMA) ? math.round((close - htf4hEMA) / math.max(htf4hEMA, 0.0001) * 100, 2) : 0.0
+htfDist1d = not na(htf1dEMA) ? math.round((close - htf1dEMA) / math.max(htf1dEMA, 0.0001) * 100, 2) : 0.0
+
+htfStructBullOK = not useHTFStructConfirm or bull1d
+htfStructBearOK = not useHTFStructConfirm or bear1d
+
+var int bullBars = 0
+var int bearBars = 0
+
+if htfBullConfirm
+    bullBars += 1
+    bearBars := 0
+else if htfBearConfirm
+    bearBars += 1
+    bullBars := 0
+else
+    bullBars := 0
+    bearBars := 0
+
+biasDuration = htfBullConfirm ? bullBars : htfBearConfirm ? bearBars : 0
+
+distPct       = math.abs(close - htfEMA200) / math.max(htfEMA200, 0.0001) * 100
+gradientAlpha = math.max(60, math.min(95, 95 - distPct * 5))
+bgBullColor   = color.new(color.green, gradientAlpha)
+bgBearColor   = color.new(color.red,   gradientAlpha)
+bgNeutColor   = color.new(color.gray,  90)
+
+bgcolor(showHTFBG ? (htfBullConfirm ? bgBullColor : htfBearConfirm ? bgBearColor : bgNeutColor) : na, title="HTF Bias Background")
+
+var int lastFlipBar = 0
+flipCooldown     = 10
+flipDistMin      = 0.3
+priceAwayFromEMA = math.abs(close - htfEMA200) / math.max(htfEMA200, 0.0001) * 100 >= flipDistMin
+
+rawFlipToBull = htfBullConfirm and not htfBullConfirm[1] and priceAwayFromEMA
+rawFlipToBear = htfBearConfirm and not htfBearConfirm[1] and priceAwayFromEMA
+
+biasFlipToBull = rawFlipToBull and trendConfirmed and htfStructBullOK and sessionAllowed and (bar_index - lastFlipBar) >= flipCooldown
+biasFlipToBear = rawFlipToBear and trendConfirmed and htfStructBearOK and sessionAllowed and (bar_index - lastFlipBar) >= flipCooldown
+
+if biasFlipToBull or biasFlipToBear
+    lastFlipBar := bar_index
+
+padR(s, width) =>
+    out = s
+    for _p = 0 to width - str.length(s) - 1
+        out := out + " "
+    out
+
+if showBiasFlip
+    if biasFlipToBull and showBullSignal
+        label.new(bar_index, low,  "▲ BULL", style=label.style_label_up,   color=color.new(color.green, 20), textcolor=color.white, size=size.small)
+    if biasFlipToBear and showBearSignal
+        label.new(bar_index, high, "▼ BEAR", style=label.style_label_down, color=color.new(color.red,   20), textcolor=color.white, size=size.small)
+
+alertcondition(biasFlipToBull and showBullSignal, "🟢 HTF Bias Flipped Bullish", "🟢 HTF Bias flipped Bullish")
+alertcondition(biasFlipToBear and showBearSignal, "🔴 HTF Bias Flipped Bearish", "🔴 HTF Bias flipped Bearish")
+
+dashLookback = adaptDashLookback()
+dashHigh     = ta.highest(high, dashLookback)
+dashLow      = ta.lowest(low,   dashLookback)
+
+var label dashLabel  = na
+var label stateLabel = na
+
+if barstate.islast
+    bias1hText  = bull1h ? "▲ BULL" : bear1h ? "▼ BEAR" : "— NEUT"
+    bias4hText  = bull4h ? "▲ BULL" : bear4h ? "▼ BEAR" : "— NEUT"
+    bias1dText  = bull1d ? "▲ BULL" : bear1d ? "▼ BEAR" : "— NEUT"
+    biasMain    = htfBullConfirm ? "▲ BULLISH" : htfBearConfirm ? "▼ BEARISH" : "— NEUTRAL"
+    durText     = str.tostring(biasDuration) + " bars"
+    dist1hText  = (htfDist1h >= 0 ? "+" : "") + str.tostring(htfDist1h) + "%"
+    dist4hText  = (htfDist4h >= 0 ? "+" : "") + str.tostring(htfDist4h) + "%"
+    dist1dText  = (htfDist1d >= 0 ? "+" : "") + str.tostring(htfDist1d) + "%"
+    rvText      = str.tostring(math.round(relVol, 2)) + "x"
+    deltaText   = bullDominant ? "▲ Bull" : "▼ Bear"
+    volTag      = isHighVol ? " ⚡" : isDryVol ? " 💧" : ""
+    trendCtx    = htfBullTrend and trendConfirmed ? "▲ Bull" : htfBearTrend and trendConfirmed ? "▼ Bear" : "— Mixed"
+    tfLabel     = tfMonthly ? "MN" : tfWeekly ? "W" : tfDaily ? "D" : str.tostring(tfMult) + "m"
+    dashColor   = htfBullConfirm ? color.new(color.green, 80) : htfBearConfirm ? color.new(color.red, 80) : color.new(color.gray, 80)
+    bullAccText = bullTotal >= 5 ? str.tostring(math.round(bullAccuracy * 100)) + "%" : "—"
+    bearAccText = bearTotal >= 5 ? str.tostring(math.round(bearAccuracy * 100)) + "%" : "—"
+    sigDirText  = signalDirection == "Bull Only" ? "▲ BULL ONLY" : signalDirection == "Bear Only" ? "▼ BEAR ONLY" : "▲▼ BOTH"
+    sesText     = not useSessionFilter ? "OFF" : activeSession == "overlap" ? "OVERLAP" : activeSession == "ny" ? "NY" : activeSession == "london" ? "LONDON" : activeSession == "asian" ? "ASIAN" : "CLOSED"
+    accRow      = showAccuracy ? "\n║ " + padR("Acc: ▲" + bullAccText + " ▼" + bearAccText, 21) + " ║" : ""
+
+    dashText =
+         "╔═══════════════════════╗\n" +
+         "║   HTF BIAS PANEL      ║\n" +
+         "╠═══════════════════════╣\n" +
+         "║ " + padR("TF:     " + tfLabel,                       21) + " ║\n" +
+         "║ " + padR("Bias:   " + biasMain,                      21) + " ║\n" +
+         "║ " + padR("Dur:    " + durText,                       21) + " ║\n" +
+         "║ " + padR("Sigs:   " + sigDirText,                    21) + " ║\n" +
+         "║ " + padR("Session:" + sesText,                       21) + " ║\n" +
+         "╠═══════════════════════╣\n" +
+         "║ " + padR("1H:     " + bias1hText + " " + dist1hText, 21) + " ║\n" +
+         "║ " + padR("4H:     " + bias4hText + " " + dist4hText, 21) + " ║\n" +
+         "║ " + padR("1D:     " + bias1dText + " " + dist1dText, 21) + " ║\n" +
+         "╠═══════════════════════╣\n" +
+         "║ " + padR("Vol:    " + rvText + volTag,               21) + " ║\n" +
+         "║ " + padR("Delta:  " + deltaText,                     21) + " ║\n" +
+         "║ " + padR("Struct: " + trendCtx,                      21) + " ║" +
+         accRow + "\n" +
+         "╚═══════════════════════╝"
+
+    if showHTFDash
+        if na(dashLabel)
+            dashLabel := label.new(bar_index + 5, dashHigh, dashText, style=label.style_label_left, color=dashColor, textcolor=color.white, size=size.small, xloc=xloc.bar_index, yloc=yloc.price)
+        else
+            label.set_x(dashLabel,     bar_index + 5)
+            label.set_y(dashLabel,     dashHigh)
+            label.set_text(dashLabel,  dashText)
+            label.set_color(dashLabel, dashColor)
+    else if not na(dashLabel)
+        label.delete(dashLabel)
+        dashLabel := na
+
+    if showFilterState
+        emaLight  = filterMode == "ADX"        ? "—" : emaTrending ? "🟢" : "🔴"
+        adxLight  = filterMode == "EMA Spread" ? "—" : adxTrending ? "🟢" : "🔴"
+        volLight  = signalVolume ? "🟢" : "🔴"
+        sesLight  = not useSessionFilter ? "—" : sessionAllowed ? "🟢" : "🔴"
+        strLight  = not useHTFStructConfirm ? "—" : (htfStructBullOK or htfStructBearOK) ? "🟢" : "🔴"
+        stateText = (signalAllowed and sessionAllowed ? "✅  SIGNALS ON" : "🚫  SIGNALS OFF") + "\n" +
+             "EMA Spread : " + emaLight + "\n" +
+             "ADX        : " + adxLight + "\n" +
+             "Volume     : " + volLight + "\n" +
+             "Session    : " + sesLight + "\n" +
+             "HTF Struct : " + strLight
+        stateColor = signalAllowed and sessionAllowed ? color.new(color.green, 20) : color.new(color.red, 20)
+        if na(stateLabel)
+            stateLabel := label.new(bar_index, dashLow, stateText, style=label.style_label_up, color=stateColor, textcolor=color.white, size=size.small, xloc=xloc.bar_index, yloc=yloc.price)
+        else
+            label.set_x(stateLabel,     bar_index)
+            label.set_y(stateLabel,     dashLow)
+            label.set_text(stateLabel,  stateText)
+            label.set_color(stateLabel, stateColor)
+    else if not na(stateLabel)
+        label.delete(stateLabel)
+        stateLabel := na
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 11 — BIAS FLIP SIGNALS (TP/SL left to user discretion)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Signals are already plotted in Section 10 via showBiasFlip.
+// TP, SL, and Entry management is intentionally left to the trader.
+// Use the HTF Bias Panel and confluence tools above to guide your entries.
