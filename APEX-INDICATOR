@@ -1,0 +1,36 @@
+# Apex-Indicator
+
+Adaptive SMC Intelligence Suite built in Pine Script v6. Features HTF multi-timeframe bias dashboard, BOS/CHoCH structure detection, Fair Value Gaps, Order Blocks, Liquidity Sweeps, Volume Delta analysis, EMA touch zones, session filters, and an adaptive signal-learning engine with real-time accuracy tracking and full confluence detection.
+
+## Indicators
+
+### Apex Indicator
+The main intelligence suite. Combines structure, bias, volume, and confluence into a single overlay indicator.
+
+**Features:**
+- HTF multi-timeframe bias dashboard (1H/4H/1D)
+- BOS and CHoCH structure detection with adaptive learning engine
+- Fair Value Gaps graded A/B/C with partial mitigation tracking
+- Order Blocks with mitigation and OB+Sweep confluence detection
+- Liquidity Sweeps with proximity detection
+- Volume Delta analysis with trend tracking
+- EMA Touch Zones with volume intensity overlay
+- Snake EMAs (25/50/100/200) with head/body coloring
+- Session and Kill Zone filters (Asian/London/NY/Overlap)
+- Bias Flip Signals with cooldown and trend confirmation
+- Real-time accuracy tracking for bull and bear signals
+
+### Apex Candle Engine
+Standalone candle analysis module with 43 pattern detection and FVG engine.
+
+**Features:**
+- 43 candle patterns across 1, 2, 3, and 5 candle formations
+- Pattern-specific color coding for every pattern type
+- Fair Value Gap engine with partial mitigation tracking
+- 6 base candle states (Strong/Mild/Extended Bull and Bear)
+
+## License
+
+© 2026 Caidyn Alexander Wheeler — All Rights Reserved
+
+Unauthorized copying, redistribution, resale, or modification of this code is strictly prohibited without express written permission from the owner.
