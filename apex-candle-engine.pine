@@ -1,0 +1,584 @@
+// ══════════════════════════════════════════════════════════════════════════════
+// APEX — Candle Engine
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// © 2026 Caidyn Alexander Wheeler — All Rights Reserved
+//
+// This source code is the intellectual property of Caidyn Alexander Wheeler.
+// Unauthorized copying, redistribution, resale, or modification of this script
+// is strictly prohibited without express written permission from the owner.
+//
+// This indicator was independently developed and is protected under copyright law.
+// Violators may be subject to legal action under applicable copyright statutes.
+//
+// For licensing, access requests, or business inquiries:
+// 📧 caidynwheeler806@icloud.com
+//
+// ══════════════════════════════════════════════════════════════════════════════
+
+//@version=6
+indicator("APEX — Candle Engine", overlay=true, max_labels_count=500, max_bars_back=500, max_lines_count=500, max_boxes_count=500)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+showCandles      = input.bool(true,  "Show Candles",        group="Candles")
+showPatternColor = input.bool(true,  "Pattern Colors",      group="Candles")
+showLabels       = input.bool(true,  "Pattern Labels",      group="Candles")
+useOpacity       = input.bool(true,  "Body Opacity",        group="Candles")
+extThresh        = input.float(3.0,  "Extended ATR",        step=0.5, minval=1.0, group="Candles")
+atrLen           = input.int(14,     "ATR Length",          minval=1, group="Candles")
+trendLen         = input.int(10,     "Trend Lookback",      minval=3, maxval=50, group="Candles")
+
+showFVG    = input.bool(true,  "Show FVG",              group="FVG")
+fvgMin     = input.float(0.1,  "Min Size (x ATR)",      step=0.05, minval=0.0, group="FVG")
+fvgLarge   = input.float(1.0,  "Large Size (x ATR)",    step=0.1,  minval=0.0, group="FVG")
+fvgPartial = input.float(0.5,  "Partial Depth (0-1)",   step=0.05, minval=0.0, maxval=1.0, group="FVG")
+fvgBars    = input.int(40,     "Extend Bars Right",     minval=1, maxval=500, group="FVG")
+fvgMaxAge  = input.int(30,     "Max Age (bars)",        minval=1, maxval=500, group="FVG")
+cBullSm    = input.color(color.new(#00FF88, 75), "Bull Small",  group="FVG")
+cBullLg    = input.color(color.new(#00FFFF, 70), "Bull Large",  group="FVG")
+cBearSm    = input.color(color.new(#FF3355, 75), "Bear Small",  group="FVG")
+cBearLg    = input.color(color.new(#FF00FF, 70), "Bear Large",  group="FVG")
+cPartial   = input.color(color.new(#FFD700, 75), "Partial",     group="FVG")
+
+cStrongBull = input.color(color.new(#00FF88,  0), "Strong Bull", group="State")
+cMildBull   = input.color(color.new(#00CC66, 20), "Mild Bull",   group="State")
+cExtBull    = input.color(color.new(#FFD700, 10), "Ext Bull",    group="State")
+cStrongBear = input.color(color.new(#FF3355,  0), "Strong Bear", group="State")
+cMildBear   = input.color(color.new(#CC2244, 20), "Mild Bear",   group="State")
+cExtBear    = input.color(color.new(#FF6600, 10), "Ext Bear",    group="State")
+
+cMaruBull = input.color(color.new(#00FF00,  0), "Marubozu Bull",   group="1-Candle")
+cMaruBear = input.color(color.new(#FF0000,  0), "Marubozu Bear",   group="1-Candle")
+cHammer   = input.color(color.new(#FFFF00,  0), "Hammer",          group="1-Candle")
+cShoot    = input.color(color.new(#FF8800,  0), "Shooting Star",   group="1-Candle")
+cPinBull  = input.color(color.new(#00FF88,  0), "Pin Bar Bull",    group="1-Candle")
+cPinBear  = input.color(color.new(#FF3355,  0), "Pin Bar Bear",    group="1-Candle")
+cDragon   = input.color(color.new(#44AAFF,  0), "Dragonfly",       group="1-Candle")
+cGrave    = input.color(color.new(#AA44FF,  0), "Gravestone",      group="1-Candle")
+cDoji     = input.color(color.new(#AAAAAA, 20), "Doji",            group="1-Candle")
+cSpin     = input.color(color.new(#CCCCCC, 30), "Spinning Top",    group="1-Candle")
+cHighWave = input.color(color.new(#FF99FF, 20), "High Wave",       group="1-Candle")
+
+cEngulfBull = input.color(color.new(#00FFFF,  0), "Engulf Bull",        group="2-Candle")
+cEngulfBear = input.color(color.new(#FF00FF,  0), "Engulf Bear",        group="2-Candle")
+cHaramiBull = input.color(color.new(#66FFDD, 20), "Harami Bull",        group="2-Candle")
+cHaramiBear = input.color(color.new(#FF6699, 20), "Harami Bear",        group="2-Candle")
+cKickBull   = input.color(color.new(#00FFAA,  0), "Kicker Bull",        group="2-Candle")
+cKickBear   = input.color(color.new(#FF0055,  0), "Kicker Bear",        group="2-Candle")
+cTweezBot   = input.color(color.new(#44FFAA,  0), "Tweezer Bot",        group="2-Candle")
+cTweezTop   = input.color(color.new(#FF44AA,  0), "Tweezer Top",        group="2-Candle")
+cBeltBull   = input.color(color.new(#00BBFF,  0), "Belt Hold Bull",     group="2-Candle")
+cBeltBear   = input.color(color.new(#FF6600,  0), "Belt Hold Bear",     group="2-Candle")
+cPierce     = input.color(color.new(#33FF99,  0), "Piercing Line",      group="2-Candle")
+cDarkCld    = input.color(color.new(#CC0066,  0), "Dark Cloud",         group="2-Candle")
+cCntrBull   = input.color(color.new(#00EEBB,  0), "Counterattack Bull", group="2-Candle")
+cCntrBear   = input.color(color.new(#EE0044,  0), "Counterattack Bear", group="2-Candle")
+cInside     = input.color(color.new(#AADDFF, 20), "Inside Bar",         group="2-Candle")
+cOutside    = input.color(color.new(#FF6644,  0), "Outside Bar",        group="2-Candle")
+
+cMornStar = input.color(color.new(#00FFCC,  0), "Morning Star",     group="3-Candle")
+cEveStar  = input.color(color.new(#FF0066,  0), "Evening Star",     group="3-Candle")
+c3White   = input.color(color.new(#00FF44,  0), "3 White Soldiers", group="3-Candle")
+c3Black   = input.color(color.new(#CC0033,  0), "3 Black Crows",    group="3-Candle")
+c3InUp    = input.color(color.new(#44FF88,  0), "3 Inside Up",      group="3-Candle")
+c3InDn    = input.color(color.new(#FF4466,  0), "3 Inside Down",    group="3-Candle")
+c3OutUp   = input.color(color.new(#88FFAA,  0), "3 Outside Up",     group="3-Candle")
+c3OutDn   = input.color(color.new(#FF6688,  0), "3 Outside Down",   group="3-Candle")
+cAbanBull = input.color(color.new(#00FFDD,  0), "Abandoned Bull",   group="3-Candle")
+cAbanBear = input.color(color.new(#FF0044,  0), "Abandoned Bear",   group="3-Candle")
+cTasukiUp = input.color(color.new(#AAFFCC,  0), "Tasuki Up",        group="3-Candle")
+cTasukiDn = input.color(color.new(#FFAACC,  0), "Tasuki Down",      group="3-Candle")
+
+cRise3  = input.color(color.new(#00DD44, 0), "Rising Three",  group="5-Candle")
+cFall3  = input.color(color.new(#DD0022, 0), "Falling Three", group="5-Candle")
+cMatHld = input.color(color.new(#55FF77, 0), "Mat Hold",      group="5-Candle")
+cDelib  = input.color(color.new(#FF5577, 0), "Deliberation",  group="5-Candle")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CORE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+atr     = ta.atr(atrLen)
+cRange  = high - low
+cBody   = math.abs(close - open)
+bRatio  = cRange > 0 ? cBody / cRange : 0.0
+bStrong = bRatio >= 0.6
+bWeak   = bRatio <= 0.3
+isBull  = close >= open
+upWick  = high - math.max(open, close)
+dnWick  = math.min(open, close) - low
+
+inDowntrend = close < ta.lowest(close, trendLen)[1]
+inUptrend   = close > ta.highest(close, trendLen)[1]
+
+p1o    = open[1]
+p1h    = high[1]
+p1l    = low[1]
+p1c    = close[1]
+p1b    = math.abs(p1c - p1o)
+p1Bull = close[1] >= open[1]
+p1Rng  = p1h - p1l
+p1Up   = p1h - math.max(p1o, p1c)
+p1Dn   = math.min(p1o, p1c) - p1l
+
+p2o    = open[2]
+p2h    = high[2]
+p2l    = low[2]
+p2c    = close[2]
+p2b    = math.abs(p2c - p2o)
+p2Bull = close[2] >= open[2]
+p2Rng  = p2h - p2l
+
+p3o    = open[3]
+p3h    = high[3]
+p3l    = low[3]
+p3c    = close[3]
+p3b    = math.abs(p3c - p3o)
+p3Bull = close[3] >= open[3]
+
+p4o    = open[4]
+p4h    = high[4]
+p4l    = low[4]
+p4c    = close[4]
+p4b    = math.abs(p4c - p4o)
+p4Bull = close[4] >= open[4]
+
+state =
+     isBull and cRange >= atr * extThresh     ? 3 :
+     not isBull and cRange >= atr * extThresh  ? 6 :
+     isBull and bStrong                        ? 1 :
+     isBull                                    ? 2 :
+     not isBull and bStrong                    ? 4 : 5
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VOLUME TREND
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var int   tDir  = 0
+var float tVolS = 0.0
+var int   tVolC = 0
+
+if (isBull and tDir == -1) or (not isBull and tDir == 1)
+    tDir  := isBull ? 1 : -1
+    tVolS := volume
+    tVolC := 1
+else
+    tDir  := isBull ? 1 : -1
+    tVolS += volume
+    tVolC += 1
+
+tAvgVol = tVolC > 0 ? tVolS / tVolC : volume
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FVG ENGINE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+bFTop   = low[0]
+bFBot   = high[2]
+brFTop  = low[2]
+brFBot  = high[0]
+bFSz    = bFTop  - bFBot
+brFSz   = brFTop - brFBot
+isBFVG  = bFSz  > atr * fvgMin
+isBrFVG = brFSz > atr * fvgMin
+bLarge  = isBFVG  and bFSz  >= atr * fvgLarge
+brLarge = isBrFVG and brFSz >= atr * fvgLarge
+
+var box[]   fb   = array.new<box>()
+var float[] ft   = array.new<float>()
+var float[] fbt  = array.new<float>()
+var bool[]  fbl  = array.new<bool>()
+var int[]   fst  = array.new<int>()
+var float[] fot  = array.new<float>()
+var float[] fob  = array.new<float>()
+var int[]   fbar = array.new<int>()
+var bool[]  fvis = array.new<bool>()
+
+_topBullFVG() =>
+    best = float(na)
+    for k = 0 to array.size(fb) - 1
+        if array.get(fbl, k) and array.get(fvis, k)
+            t = array.get(fot, k)
+            if na(best) or t > best
+                best := t
+    best
+
+_botBearFVG() =>
+    best = float(na)
+    for k = 0 to array.size(fb) - 1
+        if not array.get(fbl, k) and array.get(fvis, k)
+            b = array.get(fob, k)
+            if na(best) or b < best
+                best := b
+    best
+
+if showFVG and isBFVG
+    bgc = bLarge ? cBullLg : cBullSm
+    b   = box.new(bar_index - 2, bFTop, bar_index + fvgBars, bFBot,
+          border_color=color.new(bgc, 40), border_width=1, bgcolor=bgc)
+    array.push(fb,   b)
+    array.push(ft,   bFTop)
+    array.push(fbt,  bFBot)
+    array.push(fbl,  true)
+    array.push(fst,  0)
+    array.push(fot,  bFTop)
+    array.push(fob,  bFBot)
+    array.push(fbar, bar_index)
+    array.push(fvis, true)
+
+if showFVG and isBrFVG
+    bgc = brLarge ? cBearLg : cBearSm
+    b   = box.new(bar_index - 2, brFTop, bar_index + fvgBars, brFBot,
+          border_color=color.new(bgc, 40), border_width=1, bgcolor=bgc)
+    array.push(fb,   b)
+    array.push(ft,   brFTop)
+    array.push(fbt,  brFBot)
+    array.push(fbl,  false)
+    array.push(fst,  0)
+    array.push(fot,  brFTop)
+    array.push(fob,  brFBot)
+    array.push(fbar, bar_index)
+    array.push(fvis, true)
+
+if array.size(fb) > 0
+    topBull = _topBullFVG()
+    botBear = _botBearFVG()
+    i = 0
+    while i < array.size(fb)
+        bx   = array.get(fb,   i)
+        bull = array.get(fbl,  i)
+        ot   = array.get(fot,  i)
+        ob   = array.get(fob,  i)
+        st   = array.get(fst,  i)
+        born = array.get(fbar, i)
+        vis  = array.get(fvis, i)
+        gh   = ot - ob
+        age  = bar_index - born
+        box.set_right(bx, bar_index + 1)
+        del = false
+
+        if bull
+            isNearest = ot == topBull
+            if not isNearest and vis
+                box.set_bgcolor(bx,      color.new(cBullSm, 100))
+                box.set_border_color(bx, color.new(cBullSm, 100))
+                array.set(fvis, i, false)
+            else if isNearest and not vis and st == 0
+                bgc2 = gh >= atr * fvgLarge ? cBullLg : cBullSm
+                box.set_bgcolor(bx,      bgc2)
+                box.set_border_color(bx, color.new(bgc2, 40))
+                array.set(fvis, i, true)
+        else
+            isNearest = ob == botBear
+            if not isNearest and vis
+                box.set_bgcolor(bx,      color.new(cBearSm, 100))
+                box.set_border_color(bx, color.new(cBearSm, 100))
+                array.set(fvis, i, false)
+            else if isNearest and not vis and st == 0
+                bgc2 = gh >= atr * fvgLarge ? cBearLg : cBearSm
+                box.set_bgcolor(bx,      bgc2)
+                box.set_border_color(bx, color.new(bgc2, 40))
+                array.set(fvis, i, true)
+
+        if age > fvgMaxAge
+            del := true
+        else if bull
+            full    = close <= ob
+            pct     = gh > 0 ? (ot - close) / gh : 0.0
+            partial = not full and close < ot and pct >= fvgPartial
+            if full
+                del := true
+            else if partial and st == 0
+                box.set_top(bx,          ot - (ot - close))
+                box.set_bgcolor(bx,      cPartial)
+                box.set_border_color(bx, color.new(cPartial, 40))
+                array.set(ft,  i, ot - (ot - close))
+                array.set(fst, i, 1)
+        else
+            full    = close >= ot
+            pct     = gh > 0 ? (close - ob) / gh : 0.0
+            partial = not full and close > ob and pct >= fvgPartial
+            if full
+                del := true
+            else if partial and st == 0
+                box.set_bottom(bx,       ob + (close - ob))
+                box.set_bgcolor(bx,      cPartial)
+                box.set_border_color(bx, color.new(cPartial, 40))
+                array.set(fbt, i, ob + (close - ob))
+                array.set(fst, i, 1)
+
+        if del
+            box.delete(bx)
+            array.remove(fb,   i)
+            array.remove(ft,   i)
+            array.remove(fbt,  i)
+            array.remove(fbl,  i)
+            array.remove(fst,  i)
+            array.remove(fot,  i)
+            array.remove(fob,  i)
+            array.remove(fbar, i)
+            array.remove(fvis, i)
+        else
+            i += 1
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PATTERNS — 1 CANDLE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+isMaruBull = isBull     and cRange > 0 and bRatio >= 0.95
+isMaruBear = not isBull and cRange > 0 and bRatio >= 0.95
+
+isDragon = cRange > 0 and dnWick >= cRange*0.9 and upWick <= cRange*0.05 and cBody <= cRange*0.05
+isGrave  = cRange > 0 and upWick >= cRange*0.9 and dnWick <= cRange*0.05 and cBody <= cRange*0.05
+isDoji   = cRange > 0 and bRatio <= 0.10 and not isDragon and not isGrave
+
+isHammer = cRange > 0 and dnWick >= cBody*2.0 and upWick <= cBody*0.1 and inDowntrend and bRatio <= 0.35
+isShoot  = cRange > 0 and upWick >= cBody*2.0 and dnWick <= cBody*0.1 and inUptrend   and bRatio <= 0.35
+
+isPinBull = cRange > 0 and dnWick >= cRange*(2.0/3.0) and math.min(open,close) >= low + cRange*(2.0/3.0)
+isPinBear = cRange > 0 and upWick >= cRange*(2.0/3.0) and math.max(open,close) <= low + cRange*(1.0/3.0)
+
+isSpinEq = upWick > 0 and dnWick > 0 and math.abs(upWick - dnWick) / math.max(upWick, dnWick) <= 0.3
+isSpin   = cRange > 0 and bRatio > 0.10 and bRatio <= 0.30 and isSpinEq
+isHiWave = cRange > 0 and bRatio <= 0.15 and upWick >= cBody*3.0 and dnWick >= cBody*3.0
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PATTERNS — 2 CANDLE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+tTol = atr * 0.05
+
+isEngulfBull = isBull     and not p1Bull and cBody > p1b and high > p1h and low < p1l
+isEngulfBear = not isBull and p1Bull     and cBody > p1b and high > p1h and low < p1l
+
+isHaramiBull = not p1Bull and isBull     and open > p1c and close < p1o and open < p1o and close > p1c
+isHaramiBear = p1Bull     and not isBull and open < p1c and close > p1o and open > p1o and close < p1c
+
+isKickBull = not p1Bull and isBull     and p1b >= p1Rng*0.9 and cBody >= cRange*0.9 and open >= p1o
+isKickBear = p1Bull     and not isBull and p1b >= p1Rng*0.9 and cBody >= cRange*0.9 and open <= p1o
+
+isTweezBot = not p1Bull and isBull     and math.abs(low  - p1l) <= tTol and inDowntrend
+isTweezTop = p1Bull     and not isBull and math.abs(high - p1h) <= tTol and inUptrend
+
+isBeltBull = isBull     and dnWick <= atr*0.02 and bRatio >= 0.7
+isBeltBear = not isBull and upWick <= atr*0.02 and bRatio >= 0.7
+
+isPierce  = not p1Bull and isBull     and open < p1l and close > (p1o+p1c)*0.5 and close < p1o
+isDarkCld = p1Bull     and not isBull and open > p1h and close < (p1o+p1c)*0.5 and close > p1c
+
+isCntrBull = not p1Bull and isBull     and p1b >= atr*0.5 and cBody >= atr*0.5 and math.abs(close-p1c) <= tTol
+isCntrBear = p1Bull     and not isBull and p1b >= atr*0.5 and cBody >= atr*0.5 and math.abs(close-p1c) <= tTol
+
+isInside  = high < p1h and low > p1l
+isOutside = high > p1h and low < p1l
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PATTERNS — 3 CANDLE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+isMornStar =
+     not p2Bull and p2b >= atr*0.5 and p1b <= p2b*0.3 and
+     isBull and cBody >= atr*0.5 and close > p2c - p2b*0.5
+
+isEveStar =
+     p2Bull and p2b >= atr*0.5 and p1b <= p2b*0.3 and
+     not isBull and cBody >= atr*0.5 and close < p2c + p2b*0.5
+
+is3White =
+     isBull and p1Bull and p2Bull and close > p1c and p1c > p2c and
+     bRatio >= 0.6 and
+     (p1b/math.max(p1Rng,0.0001)) >= 0.6 and
+     (p2b/math.max(p2Rng,0.0001)) >= 0.6
+
+is3Black =
+     not isBull and not p1Bull and not p2Bull and close < p1c and p1c < p2c and
+     bRatio >= 0.6 and
+     (p1b/math.max(p1Rng,0.0001)) >= 0.6 and
+     (p2b/math.max(p2Rng,0.0001)) >= 0.6
+
+is3InUp  = not p2Bull and isHaramiBull[1] and isBull     and close > p2h
+is3InDn  = p2Bull     and isHaramiBear[1] and not isBull and close < p2l
+is3OutUp = not p2Bull and isEngulfBull[1] and isBull     and close > p1h
+is3OutDn = p2Bull     and isEngulfBear[1] and not isBull and close < p1l
+
+isAbanBull = not p2Bull and isDoji[1] and isBull     and low  > p1h and p1l > p2l
+isAbanBear = p2Bull     and isDoji[1] and not isBull and high < p1l and p1h < p2h
+
+isTasukUp = p2Bull     and p1Bull     and not isBull and p1l > p2h and open > p1c and open < p1h and close > p2h and close < p1l
+isTasukDn = not p2Bull and not p1Bull and isBull     and p1h < p2l and open < p1c and open > p1l and close < p2l and close > p1h
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PATTERNS — 5 CANDLE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+isRise3 =
+     p4Bull and p4b >= atr*0.6 and
+     not p3Bull and not p2Bull and not p1Bull and
+     p3h <= p4h and p3l >= p4l and
+     p2h <= p4h and p2l >= p4l and
+     p1h <= p4h and p1l >= p4l and
+     isBull and close > p4c and cBody >= atr*0.6
+
+isFall3 =
+     not p4Bull and p4b >= atr*0.6 and
+     p3Bull and p2Bull and p1Bull and
+     p3h <= p4l + p4b and p3l >= p4c and
+     p2h <= p4l + p4b and p2l >= p4c and
+     p1h <= p4l + p4b and p1l >= p4c and
+     not isBull and close < p4c and cBody >= atr*0.6
+
+isMatHld =
+     p4Bull and p4b >= atr*0.6 and
+     not p3Bull and p3l > p4c and
+     p2Bull and p1Bull and
+     isBull and close > p4h
+
+isDelib =
+     p2Bull and p1Bull and isBull and
+     p2b >= atr*0.5 and p1b >= atr*0.5 and
+     p1c > p2c and p2c > p3c and
+     bRatio <= 0.40 and math.abs(open - p1c) <= tTol
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PATTERN ID
+// ═══════════════════════════════════════════════════════════════════════════════
+
+pType =
+     isRise3      ? 24 : isFall3      ? 25 :
+     isMatHld     ? 26 : isDelib      ? 27 :
+     isAbanBull   ? 28 : isAbanBear   ? 29 :
+     is3InUp      ? 30 : is3InDn      ? 31 :
+     is3OutUp     ? 32 : is3OutDn     ? 33 :
+     isMornStar   ? 8  : isEveStar    ? 9  :
+     is3White     ? 10 : is3Black     ? 11 :
+     isTasukUp    ? 34 : isTasukDn    ? 35 :
+     isTweezBot   ? 12 : isTweezTop   ? 13 :
+     isInside     ? 14 : isOutside    ? 15 :
+     isHaramiBull ? 16 : isHaramiBear ? 17 :
+     isKickBull   ? 36 : isKickBear   ? 37 :
+     isPierce     ? 38 : isDarkCld    ? 39 :
+     isBeltBull   ? 40 : isBeltBear   ? 41 :
+     isCntrBull   ? 42 : isCntrBear   ? 43 :
+     isMaruBull   ? 18 : isMaruBear   ? 19 :
+     isGrave      ? 20 : isDragon     ? 21 :
+     isSpin       ? 22 : isHiWave     ? 23 :
+     isEngulfBull ? 1  : isEngulfBear ? 2  :
+     isHammer     ? 3  : isShoot      ? 4  :
+     isDoji       ? 5  : isPinBull    ? 6  :
+     isPinBear    ? 7  : 0
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LABELS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+pName(t) =>
+    switch t
+        1  => "Engulf↑"
+        2  => "Engulf↓"
+        3  => "Hammer"
+        4  => "Shoot★"
+        5  => "Doji"
+        6  => "Pin↑"
+        7  => "Pin↓"
+        8  => "Morn★"
+        9  => "Eve★"
+        10 => "3White"
+        11 => "3Black"
+        12 => "Tweez↑"
+        13 => "Tweez↓"
+        14 => "Inside"
+        15 => "Outside"
+        16 => "Harami↑"
+        17 => "Harami↓"
+        18 => "Maru↑"
+        19 => "Maru↓"
+        20 => "Grave"
+        21 => "Dragon"
+        22 => "Spin"
+        23 => "HiWave"
+        24 => "Rise3"
+        25 => "Fall3"
+        26 => "MatHold"
+        27 => "Delib"
+        28 => "Aban↑"
+        29 => "Aban↓"
+        30 => "3In↑"
+        31 => "3In↓"
+        32 => "3Out↑"
+        33 => "3Out↓"
+        34 => "Tasuki↑"
+        35 => "Tasuki↓"
+        36 => "Kick↑"
+        37 => "Kick↓"
+        38 => "Pierce"
+        39 => "DrkCld"
+        40 => "Belt↑"
+        41 => "Belt↓"
+        42 => "Cntr↑"
+        43 => "Cntr↓"
+        => ""
+
+isBullPat =
+     pType == 1  or pType == 3  or pType == 6  or pType == 8  or
+     pType == 10 or pType == 12 or pType == 16 or pType == 18 or
+     pType == 21 or pType == 24 or pType == 26 or pType == 28 or
+     pType == 30 or pType == 32 or pType == 34 or pType == 36 or
+     pType == 38 or pType == 40 or pType == 42
+
+if showLabels and pType > 0
+    ly = isBullPat ? low - atr*1.6 : high + atr*1.6
+    ls = isBullPat ? label.style_label_up : label.style_label_down
+    label.new(bar_index, ly, pName(pType),
+         style=ls, color=color.new(color.white, 0),
+         textcolor=color.black, size=size.tiny)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CANDLE COLORS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+baseCol =
+     state == 3 ? cExtBull    : state == 6 ? cExtBear    :
+     state == 1 ? cStrongBull : state == 2 ? cMildBull   :
+     state == 4 ? cStrongBear : cMildBear
+
+patCol =
+     pType == 1  ? cEngulfBull : pType == 2  ? cEngulfBear :
+     pType == 3  ? cHammer     : pType == 4  ? cShoot      :
+     pType == 5  ? cDoji       : pType == 6  ? cPinBull    :
+     pType == 7  ? cPinBear    : pType == 8  ? cMornStar   :
+     pType == 9  ? cEveStar    : pType == 10 ? c3White     :
+     pType == 11 ? c3Black     : pType == 12 ? cTweezBot   :
+     pType == 13 ? cTweezTop   : pType == 14 ? cInside     :
+     pType == 15 ? cOutside    : pType == 16 ? cHaramiBull :
+     pType == 17 ? cHaramiBear : pType == 18 ? cMaruBull   :
+     pType == 19 ? cMaruBear   : pType == 20 ? cGrave      :
+     pType == 21 ? cDragon     : pType == 22 ? cSpin       :
+     pType == 23 ? cHighWave   : pType == 24 ? cRise3      :
+     pType == 25 ? cFall3      : pType == 26 ? cMatHld     :
+     pType == 27 ? cDelib      : pType == 28 ? cAbanBull   :
+     pType == 29 ? cAbanBear   : pType == 30 ? c3InUp      :
+     pType == 31 ? c3InDn      : pType == 32 ? c3OutUp     :
+     pType == 33 ? c3OutDn     : pType == 34 ? cTasukiUp   :
+     pType == 35 ? cTasukiDn   : pType == 36 ? cKickBull   :
+     pType == 37 ? cKickBear   : pType == 38 ? cPierce     :
+     pType == 39 ? cDarkCld    : pType == 40 ? cBeltBull   :
+     pType == 41 ? cBeltBear   : pType == 42 ? cCntrBull   :
+     pType == 43 ? cCntrBear   : baseCol
+
+finalCol = color.new(
+     showPatternColor and pType > 0 ? patCol : baseCol,
+     not useOpacity ? 0 : bStrong ? 0 : bWeak ? 55 : 25)
+
+plotcandle(
+     showCandles ? open  : na,
+     showCandles ? high  : na,
+     showCandles ? low   : na,
+     showCandles ? close : na,
+     title="APEX Candles",
+     color=finalCol,
+     wickcolor=color.new(baseCol, 20),
+     bordercolor=finalCol,
+     force_overlay=true)
